@@ -1,114 +1,183 @@
--- SQL Project - Data Cleaning on Layoffs Dataset
--- Dataset Source: https://www.kaggle.com/datasets/swaptr/layoffs-2022
+-- SQL Project - Data Cleaning
 
--- 1. Load Raw Data for Review
+-- Dataset source: https://www.kaggle.com/datasets/swaptr/layoffs-2022
+
+-- Initial exploration of the data
 SELECT * 
 FROM world_layoffs.layoffs;
 
--- 2. Create a Staging Table for Data Cleaning
--- This ensures we keep the raw data intact for reference.
+-- Step 1: Create a staging table for data cleaning to preserve original data
 CREATE TABLE world_layoffs.layoffs_staging 
 LIKE world_layoffs.layoffs;
 
-INSERT INTO world_layoffs.layoffs_staging 
+-- Insert data into staging table
+INSERT INTO layoffs_staging 
 SELECT * FROM world_layoffs.layoffs;
 
--- ---------------------------------------------------
--- Step 1: Remove Duplicates
--- ---------------------------------------------------
+-- Data Cleaning Steps:
+-- 1. Remove duplicates
+-- 2. Standardize data and correct inconsistencies
+-- 3. Handle null values
+-- 4. Remove unnecessary rows and columns
 
--- Check for Duplicates by Identifying Rows with Similar Key Columns
-SELECT company, industry, total_laid_off, `date`,
-    ROW_NUMBER() OVER (
-        PARTITION BY company, industry, total_laid_off, `date`
-    ) AS row_num
+-- Step 1: Identify and remove duplicate rows
+
+-- Retrieve all rows from staging table
+SELECT *
 FROM world_layoffs.layoffs_staging;
 
--- Filter Out Duplicate Rows Based on Identified Patterns
+-- Use ROW_NUMBER to identify duplicate rows based on company, industry, total_laid_off, and date
+SELECT company, industry, total_laid_off, date,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, industry, total_laid_off, date) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging;
+
+-- Check for rows with duplicates
 SELECT *
 FROM (
-    SELECT company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions,
-        ROW_NUMBER() OVER (
-            PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions
-        ) AS row_num
-    FROM world_layoffs.layoffs_staging
+	SELECT company, industry, total_laid_off, date,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, industry, total_laid_off, date
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging
 ) duplicates
-WHERE row_num > 1;
+WHERE 
+	row_num > 1;
 
--- Delete Duplicate Records While Keeping One Copy
-WITH DELETE_CTE AS (
-    SELECT company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions, 
-        ROW_NUMBER() OVER (
-            PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions
-        ) AS row_num
-    FROM world_layoffs.layoffs_staging
+-- Example check for specific company 'Oda' to ensure data accuracy
+SELECT *
+FROM world_layoffs.layoffs_staging
+WHERE company = 'Oda';
+
+-- Further refine duplicate search by expanding to additional columns
+SELECT *
+FROM (
+	SELECT company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging
+) duplicates
+WHERE 
+	row_num > 1;
+
+-- Use a Common Table Expression (CTE) to delete duplicates based on row numbers
+WITH DELETE_CTE AS 
+(
+SELECT *
+FROM (
+	SELECT company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging
+) duplicates
+WHERE 
+	row_num > 1
 )
-DELETE FROM world_layoffs.layoffs_staging
-WHERE (company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions, row_num) IN (
-    SELECT company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions, row_num
-    FROM DELETE_CTE
-) AND row_num > 1;
+DELETE
+FROM DELETE_CTE;
 
--- ---------------------------------------------------
+-- Alternative duplicate removal approach by adding a row number column for tracking
+ALTER TABLE world_layoffs.layoffs_staging ADD row_num INT;
+
+-- Create new staging table with row numbers for further deduplication
+CREATE TABLE world_layoffs.layoffs_staging2 (
+	company TEXT,
+	location TEXT,
+	industry TEXT,
+	total_laid_off INT,
+	percentage_laid_off TEXT,
+	date TEXT,
+	stage TEXT,
+	country TEXT,
+	funds_raised_millions INT,
+	row_num INT
+);
+
+-- Populate new staging table with ROW_NUMBER for duplicates identification
+INSERT INTO world_layoffs.layoffs_staging2
+(company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions, row_num)
+SELECT company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions,
+	ROW_NUMBER() OVER (
+		PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions
+	) AS row_num
+FROM 
+	world_layoffs.layoffs_staging;
+
+-- Delete rows in new staging table where row_num >= 2
+DELETE FROM world_layoffs.layoffs_staging2
+WHERE row_num >= 2;
+
 -- Step 2: Standardize Data
--- ---------------------------------------------------
 
--- Standardize the Industry Column: Replace Blank Values with NULL
+-- Check for inconsistent or missing 'industry' entries
+SELECT DISTINCT industry
+FROM world_layoffs.layoffs_staging2
+ORDER BY industry;
+
+-- Identify rows with null or blank 'industry' values
+SELECT *
+FROM world_layoffs.layoffs_staging2
+WHERE industry IS NULL 
+OR industry = ''
+ORDER BY industry;
+
+-- Set empty strings to NULL for easier handling
 UPDATE world_layoffs.layoffs_staging2
 SET industry = NULL
 WHERE industry = '';
 
--- Populate Null Industry Fields Based on Other Rows of the Same Company
-UPDATE world_layoffs.layoffs_staging2 t1
-JOIN world_layoffs.layoffs_staging2 t2
+-- Populate null industry values by referencing similar entries
+UPDATE layoffs_staging2 t1
+JOIN layoffs_staging2 t2
 ON t1.company = t2.company
 SET t1.industry = t2.industry
-WHERE t1.industry IS NULL AND t2.industry IS NOT NULL;
+WHERE t1.industry IS NULL
+AND t2.industry IS NOT NULL;
 
--- Standardize Variants of the 'Crypto' Industry to a Single Term
-UPDATE world_layoffs.layoffs_staging2
+-- Standardize variations in 'industry' entries, e.g., 'Crypto' variations
+UPDATE layoffs_staging2
 SET industry = 'Crypto'
 WHERE industry IN ('Crypto Currency', 'CryptoCurrency');
 
--- Standardize Country Names: Remove Trailing Period in 'United States.'
-UPDATE world_layoffs.layoffs_staging2
+-- Standardize country names by removing trailing periods
+UPDATE layoffs_staging2
 SET country = TRIM(TRAILING '.' FROM country);
 
--- Convert 'date' Column from Text to Date Format
-UPDATE world_layoffs.layoffs_staging2
-SET `date` = STR_TO_DATE(`date`, '%m/%d/%Y');
+-- Convert 'date' column to proper date format and data type
+UPDATE layoffs_staging2
+SET date = STR_TO_DATE(date, '%m/%d/%Y');
 
--- Alter 'date' Column to Proper DATE Data Type
-ALTER TABLE world_layoffs.layoffs_staging2
-MODIFY COLUMN `date` DATE;
+ALTER TABLE layoffs_staging2
+MODIFY COLUMN date DATE;
 
--- ---------------------------------------------------
--- Step 3: Review and Handle Null Values
--- ---------------------------------------------------
+-- Step 3: Handle Null Values
 
--- Review Null Values in Key Columns: `total_laid_off`, `percentage_laid_off`, and `funds_raised_millions`
+-- Review null values for potential issues, leaving as null for EDA phase
 SELECT *
 FROM world_layoffs.layoffs_staging2
-WHERE total_laid_off IS NULL;
+WHERE total_laid_off IS NULL
+AND percentage_laid_off IS NULL;
 
--- Remove Rows with Both 'total_laid_off' and 'percentage_laid_off' as Null (Non-useful Data)
+-- Remove rows with non-informative null values in key columns
 DELETE FROM world_layoffs.layoffs_staging2
-WHERE total_laid_off IS NULL AND percentage_laid_off IS NULL;
+WHERE total_laid_off IS NULL
+AND percentage_laid_off IS NULL;
 
--- ---------------------------------------------------
--- Step 4: Final Data Cleanup and Remove Temporary Columns
--- ---------------------------------------------------
+-- Step 4: Remove unnecessary columns
 
--- Remove the Temporary 'row_num' Column Now that Duplicates Have Been Handled
-ALTER TABLE world_layoffs.layoffs_staging2
+-- Drop 'row_num' column as it is no longer needed
+ALTER TABLE layoffs_staging2
 DROP COLUMN row_num;
 
--- Final Verification of Cleaned Data
+-- Final result after cleaning
 SELECT * 
 FROM world_layoffs.layoffs_staging2;
-
-
-
 
 
 
