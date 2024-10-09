@@ -1,20 +1,38 @@
 # DATA CLEANING SQL
-This SQL project focuses on data cleaning for a dataset of global layoffs from 2022, sourced from Kaggle. The process includes several key steps aimed at preparing the dataset for analysis. Here’s a summary of the approach and methodology:
+Alright, here’s the rundown of what went down in this SQL project on cleaning up a dataset of layoffs in 2022 from Kaggle. The whole process is about getting messy data organized and consistent so we can actually work with it later. Here’s how it went down:
 
-1. Setting Up the Environment
-The first step is to create a staging table (layoffs_staging) from the original data table (layoffs). This staging table is used to perform all cleaning tasks, keeping the original data intact.
-2. Removing Duplicates
-The process begins by identifying and removing duplicate rows. This is done by using the ROW_NUMBER() function to partition data based on multiple columns (e.g., company, industry, total_laid_off, and date), assigning row numbers to each partition.
-Rows with a row number greater than one within a partition are considered duplicates and are removed. A Common Table Expression (CTE) is employed to simplify this process and streamline deletion.
-An alternative method involves creating a new staging table (layoffs_staging2) with an additional row_num column to facilitate identifying and removing duplicate rows.
-3. Standardizing Data
-After handling duplicates, the next step is data standardization. This involves ensuring consistency within key columns such as industry and country.
-Inconsistencies within the industry column are addressed by replacing different variations of terms, such as "Crypto Currency" and "CryptoCurrency," with a single standard term "Crypto."
-Any blank values in the industry column are converted to NULL for easier handling, and efforts are made to fill these NULL values by referencing other rows with matching company names.
-Similarly, minor variations in the country column (like “United States” and “United States.”) are corrected using string functions.
-4. Handling Dates and Null Values
-The date column is reformatted from string to date format (DATE) using STR_TO_DATE(), enabling consistent date handling for subsequent analysis.
-The total_laid_off, percentage_laid_off, and funds_raised_millions columns are examined for null values. The decision is made to retain nulls here, as they might provide useful insights during exploratory data analysis (EDA).
-5. Removing Unnecessary Data
-Rows with null values in critical columns, such as total_laid_off and percentage_laid_off, which do not contribute meaningful information, are deleted.
-Finally, the row_num column, initially added for managing duplicates, is removed as it is no longer necessary.
+Step 1: Setting Up a Staging Table
+First off, we didn’t want to mess with the raw data directly, so we made a copy of it into a new table called layoffs_staging. This is where all the cleaning happens. It’s a good habit to keep the original data untouched, just in case something goes wrong or you need to reference it later.
+
+Step 2: Removing Duplicates
+Next up was finding and getting rid of duplicates. We ran a query with ROW_NUMBER() to assign row numbers to each row based on things like company, industry, total_laid_off, and date. Any row with a row number greater than one is a duplicate.
+
+I used a Common Table Expression (CTE) to isolate these duplicates and delete them. I also tried out a method that involves creating a new staging table with an extra row_num column so we can visually check which rows are considered duplicates before deleting.
+
+Step 3: Standardizing Data
+Then we tackled standardizing the data. This step involved checking for inconsistencies and making things uniform. For example, the industry column had some terms spelled out differently. So, we replaced all the variations with just "Crypto."
+
+We also found blank values in the industry column and converted them to NULL values, which are generally easier to handle in SQL. Then, I ran a query to fill in these nulls based on other rows that had the same company name but a filled-out industry. It saved a lot of manual checking!
+
+The country column had some minor issues, like "United States" versus "United States." with a period at the end. We used TRIM() to fix that in one shot.
+
+Step 4: Cleaning Up Dates and Handling Nulls
+The date column needed some attention, so we converted it from a string to a proper date format using STR_TO_DATE(). This will make it much easier to sort and analyze by date later on.
+
+For columns like total_laid_off, percentage_laid_off, and funds_raised_millions, I decided to keep the null values. These might actually be useful later when we’re exploring the data, as they can indicate missing information that could be meaningful.
+
+Step 5: Dropping Unnecessary Data
+Finally, I did a quick check on the rows where total_laid_off and percentage_laid_off were null. Since they don’t really add value and are pretty much useless for our analysis, I went ahead and deleted those rows.
+
+We also removed the row_num column that we added earlier for handling duplicates, as it was just there temporarily to help with the cleanup.
+
+Wrapping Up
+Now, we have a clean, consistent dataset in the layoffs_staging2 table. It’s ready to be analyzed without us worrying about duplicates, inconsistent terms, or random blanks in the data. This setup makes it a lot easier to dive into trends and insights, like which industries were hit the hardest or which regions had the most layoffs.
+
+So, that’s the whole process! It’s a great example of how SQL can help whip a messy dataset into shape, step by step.
+
+
+
+
+
+
